@@ -88,12 +88,20 @@ mod tests {
     }
 
     #[test]
-    fn test_load_valid_config() {
+    fn config_loads_from_env() {
         let _guard = EnvGuard::new();
         set_valid_env();
 
         let config = AppConfig::load();
         assert!(config.is_ok());
+
+        let cfg = config.unwrap();
+        assert_eq!(cfg.fmn_mode, "shadow");
+        assert_eq!(cfg.fmn_db_path, "fmn.db");
+        assert_eq!(cfg.fmn_worm_path, "fmn.ledger");
+        assert_eq!(cfg.fmn_upstream_base_url, "https://api.openai.com/v1");
+        assert_eq!(cfg.fmn_upstream_key, "sk-testkey");
+        assert_eq!(cfg.fmn_bind_addr, "127.0.0.1:8787");
     }
 
     #[test]
