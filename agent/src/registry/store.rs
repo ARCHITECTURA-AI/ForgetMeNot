@@ -19,7 +19,7 @@ pub struct RegistryStore {
 }
 
 impl RegistryStore {
-    pub fn new(conn: Connection) -> anyhow::Result<Self>
+    pub fn new(conn: Connection) -> anyhow::Result<Self> {
         let _ = conn.execute(
             "CREATE TABLE IF NOT EXISTS registry (
                 entity_id TEXT PRIMARY KEY,
@@ -138,6 +138,31 @@ mod tests {
     fn setup_store() -> RegistryStore {
         let conn = Connection::open_in_memory().unwrap();
         RegistryStore::new(conn)
+    }
+
+    #[test]
+    fn name_is_stored_hashed_only() {
+        let store = setup_store();
+        let name_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string();
+
+        let entry = RegistryEntry {
+            entity_id: "ent-100".to_string(),
+            request_id: "req-100".to_string(),
+            jurisdiction: "US".to_string(),
+            name_hash: name_hash.clone(),
+            alias_hashes: vec!["alias_hash_1".to_string()],
+            org_hash: "org_hash_1".to_string(),
+            scope: "chat".to_string(),
+            requester_identity_verified: true,
+            created_at: "2026-06-24T00:00:00Z".to_string(),
+            version: 1,
+        };
+
+        store.insert(&entry).unwrap();
+        let retrieved = store.get("ent-100").unwrap().unwrap();
+
+        assert_eq!(retrieved.name_hash, name_hash);
+        assert_ne!(retrieved.name_hash, "John Smith");
     }
 
     #[test]
