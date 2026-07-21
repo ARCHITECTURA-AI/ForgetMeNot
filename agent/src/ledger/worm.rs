@@ -97,6 +97,22 @@ mod tests {
     }
 
     #[test]
+    fn write_is_durable_before_return() {
+        let temp = TempFile::new();
+        let ledger = WormLedger::new(temp.path.clone());
+
+        let event = create_test_event(1);
+        let result = ledger.append(&event);
+        assert!(result.is_ok());
+
+        // Verify durability by opening a separate handle from disk immediately after return
+        let fresh_ledger = WormLedger::new(temp.path.clone());
+        let read_events = fresh_ledger.read_all().unwrap();
+        assert_eq!(read_events.len(), 1);
+        assert_eq!(read_events[0], event);
+    }
+
+    #[test]
     fn test_append_one_and_read_back() {
         let temp = TempFile::new();
         let ledger = WormLedger::new(temp.path.clone());

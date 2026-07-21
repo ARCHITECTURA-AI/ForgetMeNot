@@ -10,17 +10,17 @@ impl LedgerWriter {
     pub fn new(worm: WormLedger) -> Self {
         Self { worm }
     }
-if existing.is_empty() {
-    if event.sequence_no != 1 {
-        return Err(anyhow::anyhow!(
-            "Genesis event must have sequence number 1"
-        ));
-    }
-}
+
     pub fn append(&self, event: LedgerEvent) -> anyhow::Result<()> {
         let existing = self.worm.read_all()?;
 
-        if let Some(last_event) = existing.last() {
+        if existing.is_empty() {
+            if event.sequence_no != 1 {
+                return Err(anyhow::anyhow!(
+                    "Genesis event must have sequence number 1"
+                ));
+            }
+        } else if let Some(last_event) = existing.last() {
             if event.sequence_no != last_event.sequence_no + 1 {
                 return Err(anyhow::anyhow!(
                     "Invalid sequence number: expected {}, got {}",
@@ -99,6 +99,18 @@ mod tests {
         }
 
         event
+    }
+
+    #[test]
+    fn failed_write_returns_error_not_silent_pass() {
+        let invalid_path = PathBuf::from("/non_existent_directory_12345/fmn.ledger");
+        let worm = WormLedger::new(invalid_path);
+        let writer = LedgerWriter::new(worm);
+
+        let event = create_test_event(1, "genesis_prev_hash", true);
+        let res = writer.append(event);
+
+        assert!(res.is_err());
     }
 
     #[test]

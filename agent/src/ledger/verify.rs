@@ -92,6 +92,25 @@ mod tests {
     }
 
     #[test]
+    fn tampering_breaks_chain_and_names_index() {
+        let mut events = Vec::new();
+        let mut prev_hash = "genesis".to_string();
+        for seq in 1..=10 {
+            let event = create_test_event(seq, &prev_hash, true);
+            prev_hash = event.event_hash.clone();
+            events.push(event);
+        }
+
+        // Mutate event #5 (at sequence 5) in the event chain
+        events[4].event_type = "TAMPERED_EVENT".to_string();
+
+        let result = verify_ledger(&events);
+
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.contains("sequence 5") || e.contains("between 5 and 6")));
+    }
+
+    #[test]
     fn test_empty_ledger() {
         let result = verify_ledger(&[]);
         assert!(result.valid);

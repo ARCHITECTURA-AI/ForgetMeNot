@@ -65,6 +65,15 @@ mod tests {
     }
 
     #[test]
+    fn each_event_links_to_previous() {
+        let prev = create_test_event(1, "genesis_hash");
+        let current = create_test_event(2, &prev.event_hash);
+
+        assert_eq!(current.prev_event_hash, prev.event_hash);
+        assert!(verify_chain(&prev, &current));
+    }
+
+    #[test]
     fn test_valid_event_hash() {
         let event = create_test_event(1, "genesis_hash");
         assert!(verify_event_hash(&event));

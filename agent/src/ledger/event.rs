@@ -64,6 +64,35 @@ impl LedgerEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ledger::chain::compute_event_hash;
+
+    #[test]
+    fn event_hash_is_deterministic() {
+        let event = LedgerEvent::new(
+            "event-123".to_string(),
+            42,
+            "2026-06-24T09:00:00Z".to_string(),
+            "org-456".to_string(),
+            "subj-789".to_string(),
+            "sess-abc".to_string(),
+            "INFERENCE_CLEAN".to_string(),
+            Some("ent-1".to_string()),
+            Some("req-2".to_string()),
+            "enforcement".to_string(),
+            Some("gpt-4o".to_string()),
+            "PASS".to_string(),
+            0.05,
+            "inf-hash".to_string(),
+            "prev-hash".to_string(),
+            "current-hash".to_string(),
+        );
+
+        let hash1 = compute_event_hash(&event);
+        let hash2 = compute_event_hash(&event);
+
+        assert_eq!(hash1, hash2);
+        assert!(!hash1.is_empty());
+    }
 
     #[test]
     fn test_ledger_event_creation() {
