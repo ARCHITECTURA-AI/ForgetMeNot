@@ -22,6 +22,8 @@ tracing-subscriber = "0.3"
 clap = { version = "4", features = ["derive"] }   # the CLI
 anyhow = "1"                # easy error handling
 thiserror = "1"
+dotenvy = "0.15"            # .env file loading
 
 [dev-dependencies]
 tokio-test = "0.4"
+tower = { version = "0.4", features = ["util"] }
