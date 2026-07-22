@@ -40,7 +40,11 @@ impl RegistryStore {
 
     pub fn insert(&self, entry: &RegistryEntry) -> anyhow::Result<()> {
         let alias_hashes_json = serde_json::to_string(&entry.alias_hashes)?;
-        let verified = if entry.requester_identity_verified { 1 } else { 0 };
+        let verified = if entry.requester_identity_verified {
+            1
+        } else {
+            0
+        };
 
         self.conn.execute(
             "INSERT INTO registry (
@@ -71,26 +75,34 @@ impl RegistryStore {
              FROM registry WHERE entity_id = ?1",
         )?;
 
-        let res = stmt.query_row([entity_id], |row| {
-            let alias_hashes_str: String = row.get(4)?;
-            let alias_hashes: Vec<String> = serde_json::from_str(&alias_hashes_str)
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e)))?;
+        let res = stmt
+            .query_row([entity_id], |row| {
+                let alias_hashes_str: String = row.get(4)?;
+                let alias_hashes: Vec<String> =
+                    serde_json::from_str(&alias_hashes_str).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
 
-            let verified_int: i32 = row.get(7)?;
+                let verified_int: i32 = row.get(7)?;
 
-            Ok(RegistryEntry {
-                entity_id: row.get(0)?,
-                request_id: row.get(1)?,
-                jurisdiction: row.get(2)?,
-                name_hash: row.get(3)?,
-                alias_hashes,
-                org_hash: row.get(5)?,
-                scope: row.get(6)?,
-                requester_identity_verified: verified_int != 0,
-                created_at: row.get(8)?,
-                version: row.get(9)?,
+                Ok(RegistryEntry {
+                    entity_id: row.get(0)?,
+                    request_id: row.get(1)?,
+                    jurisdiction: row.get(2)?,
+                    name_hash: row.get(3)?,
+                    alias_hashes,
+                    org_hash: row.get(5)?,
+                    scope: row.get(6)?,
+                    requester_identity_verified: verified_int != 0,
+                    created_at: row.get(8)?,
+                    version: row.get(9)?,
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         Ok(res)
     }
@@ -104,8 +116,14 @@ impl RegistryStore {
 
         let rows = stmt.query_map([], |row| {
             let alias_hashes_str: String = row.get(4)?;
-            let alias_hashes: Vec<String> = serde_json::from_str(&alias_hashes_str)
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e)))?;
+            let alias_hashes: Vec<String> =
+                serde_json::from_str(&alias_hashes_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        4,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
 
             let verified_int: i32 = row.get(7)?;
 
@@ -137,13 +155,14 @@ mod tests {
 
     fn setup_store() -> RegistryStore {
         let conn = Connection::open_in_memory().unwrap();
-        RegistryStore::new(conn)
+        RegistryStore::new(conn).unwrap()
     }
 
     #[test]
     fn name_is_stored_hashed_only() {
         let store = setup_store();
-        let name_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string();
+        let name_hash =
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string();
 
         let entry = RegistryEntry {
             entity_id: "ent-100".to_string(),
@@ -239,7 +258,11 @@ mod tests {
             request_id: "req-1".to_string(),
             jurisdiction: "IN".to_string(),
             name_hash: "hash-1".to_string(),
-            alias_hashes: vec!["alias-1".to_string(), "alias-2".to_string(), "alias-3".to_string()],
+            alias_hashes: vec![
+                "alias-1".to_string(),
+                "alias-2".to_string(),
+                "alias-3".to_string(),
+            ],
             org_hash: "org-1".to_string(),
             scope: "chat".to_string(),
             requester_identity_verified: true,
@@ -249,6 +272,13 @@ mod tests {
 
         store.insert(&entry).unwrap();
         let retrieved = store.get("ent-1").unwrap().unwrap();
-        assert_eq!(retrieved.alias_hashes, vec!["alias-1".to_string(), "alias-2".to_string(), "alias-3".to_string()]);
+        assert_eq!(
+            retrieved.alias_hashes,
+            vec![
+                "alias-1".to_string(),
+                "alias-2".to_string(),
+                "alias-3".to_string()
+            ]
+        );
     }
 }

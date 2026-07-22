@@ -1,10 +1,10 @@
+use crate::ledger::event::LedgerEvent;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use crate::ledger::event::LedgerEvent;
 
 pub struct WormLedger {
-     file_path: PathBuf,
+    file_path: PathBuf,
 }
 
 impl WormLedger {
@@ -62,7 +62,11 @@ mod tests {
         fn new() -> Self {
             let count = TEMP_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
             let mut path = std::env::temp_dir();
-            path.push(format!("fmn_worm_test_{}_{}.jsonl", std::process::id(), count));
+            path.push(format!(
+                "fmn_worm_test_{}_{}.jsonl",
+                std::process::id(),
+                count
+            ));
             Self { path }
         }
     }

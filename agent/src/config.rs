@@ -22,10 +22,12 @@ impl AppConfig {
             .map_err(|_| anyhow::anyhow!("Missing required environment variable FMN_DB_PATH"))?;
         let fmn_worm_path = std::env::var("FMN_WORM_PATH")
             .map_err(|_| anyhow::anyhow!("Missing required environment variable FMN_WORM_PATH"))?;
-        let fmn_upstream_base_url = std::env::var("FMN_UPSTREAM_BASE_URL")
-            .map_err(|_| anyhow::anyhow!("Missing required environment variable FMN_UPSTREAM_BASE_URL"))?;
-        let fmn_upstream_key = std::env::var("FMN_UPSTREAM_KEY")
-            .map_err(|_| anyhow::anyhow!("Missing required environment variable FMN_UPSTREAM_KEY"))?;
+        let fmn_upstream_base_url = std::env::var("FMN_UPSTREAM_BASE_URL").map_err(|_| {
+            anyhow::anyhow!("Missing required environment variable FMN_UPSTREAM_BASE_URL")
+        })?;
+        let fmn_upstream_key = std::env::var("FMN_UPSTREAM_KEY").map_err(|_| {
+            anyhow::anyhow!("Missing required environment variable FMN_UPSTREAM_KEY")
+        })?;
         let fmn_bind_addr = std::env::var("FMN_BIND_ADDR")
             .map_err(|_| anyhow::anyhow!("Missing required environment variable FMN_BIND_ADDR"))?;
 
@@ -59,7 +61,8 @@ mod tests {
 
     impl EnvGuard {
         fn new() -> Self {
-            let original = KEYS.iter()
+            let original = KEYS
+                .iter()
                 .map(|&k| (k.to_string(), std::env::var(k).ok()))
                 .collect();
             Self { original }
@@ -120,7 +123,7 @@ mod tests {
     #[test]
     fn test_values_read_correctly() {
         let _guard = EnvGuard::new();
-        
+
         std::env::set_var("FMN_MODE", "enforcement");
         std::env::set_var("FMN_DB_PATH", "test.db");
         std::env::set_var("FMN_WORM_PATH", "test.ledger");

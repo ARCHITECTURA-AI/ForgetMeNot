@@ -1,5 +1,5 @@
+use crate::ledger::chain::{verify_chain, verify_event_hash};
 use crate::ledger::event::LedgerEvent;
-use crate::ledger::chain::{verify_event_hash, verify_chain};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VerificationResult {
@@ -22,13 +22,19 @@ pub fn verify_ledger(events: &[LedgerEvent]) -> VerificationResult {
     // 1. Verify every event hash
     for event in events {
         if !verify_event_hash(event) {
-            errors.push(format!("Invalid event hash at sequence {}", event.sequence_no));
+            errors.push(format!(
+                "Invalid event hash at sequence {}",
+                event.sequence_no
+            ));
         }
     }
 
     // 2. Verify sequence continuity
     if events[0].sequence_no != 1 {
-        errors.push(format!("Sequence gap between 0 and {}", events[0].sequence_no));
+        errors.push(format!(
+            "Sequence gap between 0 and {}",
+            events[0].sequence_no
+        ));
     }
     for i in 1..events.len() {
         let prev = events[i - 1].sequence_no;
@@ -107,7 +113,10 @@ mod tests {
         let result = verify_ledger(&events);
 
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.contains("sequence 5") || e.contains("between 5 and 6")));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.contains("sequence 5") || e.contains("between 5 and 6")));
     }
 
     #[test]
@@ -158,8 +167,14 @@ mod tests {
         // Sequence gap triggers two failures:
         // 1. Sequence gap error
         // 2. Broken chain error (since verify_chain checks sequence increment)
-        assert!(result.errors.iter().any(|e| e == "Sequence gap between 1 and 3"));
-        assert!(result.errors.iter().any(|e| e == "Broken chain between 1 and 3"));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e == "Sequence gap between 1 and 3"));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e == "Broken chain between 1 and 3"));
     }
 
     #[test]
@@ -184,13 +199,22 @@ mod tests {
 
         let result = verify_ledger(&[event1, event2]);
         assert!(!result.valid);
-        
+
         // We expect:
         // 1. Invalid event hash at sequence 1
         // 2. Sequence gap between 1 and 3
         // 3. Broken chain between 1 and 3
-        assert!(result.errors.iter().any(|e| e == "Invalid event hash at sequence 1"));
-        assert!(result.errors.iter().any(|e| e == "Sequence gap between 1 and 3"));
-        assert!(result.errors.iter().any(|e| e == "Broken chain between 1 and 3"));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e == "Invalid event hash at sequence 1"));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e == "Sequence gap between 1 and 3"));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e == "Broken chain between 1 and 3"));
     }
 }

@@ -1,13 +1,16 @@
-use std::sync::Arc;
+use crate::config::AppConfig;
+use crate::ledger::worm::WormLedger;
+use crate::registry::store::RegistryStore;
 use axum::{routing::get, Json, Router};
 use rusqlite::Connection;
-use crate::config::AppConfig;
-use crate::registry::store::RegistryStore;
-use crate::ledger::worm::WormLedger;
+use std::sync::Arc;
 
 mod config;
-mod registry;
+mod ingress;
 mod ledger;
+mod lineage;
+mod normaliser;
+mod registry;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -120,7 +123,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json, serde_json::json!({"status": "ok"}));
     }
@@ -141,7 +146,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json, serde_json::json!({"status": "ready"}));
     }

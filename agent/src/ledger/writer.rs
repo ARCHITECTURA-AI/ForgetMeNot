@@ -1,11 +1,10 @@
+use crate::ledger::chain::verify_event_hash;
 use crate::ledger::event::LedgerEvent;
 use crate::ledger::worm::WormLedger;
-use crate::ledger::chain::verify_event_hash;
 
 pub struct LedgerWriter {
     worm: WormLedger,
 }
-#[must_use]
 impl LedgerWriter {
     pub fn new(worm: WormLedger) -> Self {
         Self { worm }
@@ -16,9 +15,7 @@ impl LedgerWriter {
 
         if existing.is_empty() {
             if event.sequence_no != 1 {
-                return Err(anyhow::anyhow!(
-                    "Genesis event must have sequence number 1"
-                ));
+                return Err(anyhow::anyhow!("Genesis event must have sequence number 1"));
             }
         } else if let Some(last_event) = existing.last() {
             if event.sequence_no != last_event.sequence_no + 1 {
@@ -59,7 +56,11 @@ mod tests {
         fn new() -> Self {
             let count = TEMP_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
             let mut path = std::env::temp_dir();
-            path.push(format!("fmn_writer_refac_test_{}_{}.jsonl", std::process::id(), count));
+            path.push(format!(
+                "fmn_writer_refac_test_{}_{}.jsonl",
+                std::process::id(),
+                count
+            ));
             Self { path }
         }
     }
@@ -162,7 +163,10 @@ mod tests {
         let genesis = create_test_event(1, "genesis_prev_hash", false);
         let res = writer.append(genesis);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("hash verification failed"));
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("hash verification failed"));
     }
 
     #[test]
@@ -179,7 +183,10 @@ mod tests {
         let second = create_test_event(3, &genesis.event_hash, true);
         let res = writer.append(second);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("Invalid sequence number"));
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid sequence number"));
     }
 
     #[test]
@@ -196,6 +203,9 @@ mod tests {
         let second = create_test_event(2, "some_incorrect_hash", true);
         let res = writer.append(second);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("Invalid previous event hash link"));
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid previous event hash link"));
     }
 }

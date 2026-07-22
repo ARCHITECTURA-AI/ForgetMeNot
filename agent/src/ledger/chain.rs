@@ -1,5 +1,5 @@
-use sha2::{Digest, Sha256};
 use crate::ledger::event::LedgerEvent;
+use sha2::{Digest, Sha256};
 #[must_use]
 pub fn compute_event_hash(event: &LedgerEvent) -> String {
     let data = format!(
