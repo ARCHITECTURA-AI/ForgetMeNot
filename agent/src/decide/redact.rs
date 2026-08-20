@@ -52,7 +52,10 @@ impl RedactionSpan {
     /// Panics in debug builds if `start > end`.
     #[must_use]
     pub fn new(start: usize, end: usize) -> Self {
-        debug_assert!(start <= end, "RedactionSpan: start ({start}) must be <= end ({end})");
+        debug_assert!(
+            start <= end,
+            "RedactionSpan: start ({start}) must be <= end ({end})"
+        );
         Self { start, end }
     }
 
@@ -69,30 +72,46 @@ impl From<std::ops::Range<usize>> for RedactionSpan {
     }
 }
 
+// ── RedactionError ────────────────────────────────────────────────────────────
+
+/// Errors that can occur during redaction range validation.
+#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+pub enum RedactionError {
+    /// The span range starts or ends out of string bounds, or start > end.
+    #[error("Invalid span range: start {start}, end {end}, length {len}")]
+    InvalidSpan {
+        start: usize,
+        end: usize,
+        len: usize,
+    },
+
+    /// The span starts or ends on a byte index that is not a UTF-8 character boundary.
+    #[error("Non-character boundary span: start {start}, end {end}")]
+    NonCharBoundary { start: usize, end: usize },
+}
+
 // ── redact_text ───────────────────────────────────────────────────────────────
 
 /// Replace every span in `spans` within `text` with [`REDACTION_LABEL`].
 ///
+/// # Validation
+///
+/// All spans are validated first. If any span is out of range or not on a UTF-8
+/// character boundary, an explicit error is returned.
+///
 /// # Algorithm
 ///
-/// 1. **Filter** empty spans (`start >= end`).
-/// 2. **Sort** remaining spans by `start` byte position.
-/// 3. **Merge** overlapping or adjacent spans into a minimal covering set.
-///    This prevents double-replacement and index corruption when the detector
-///    emits overlapping findings.
-/// 4. **Substitute** in a single left-to-right pass: copy the gap before each
+/// 1. **Validate** all span ranges against bounds and char boundaries.
+/// 2. **Filter** empty spans (`start >= end`).
+/// 3. **Sort** remaining spans by `start` byte position.
+/// 4. **Merge** overlapping or adjacent spans into a minimal covering set.
+/// 5. **Substitute** in a single left-to-right pass: copy the gap before each
 ///    merged span verbatim, then append [`REDACTION_LABEL`].
-/// 5. Copy any trailing text after the last span.
-///
-/// Span boundaries are **clamped** to the length of `text` before use, so an
-/// out-of-range end byte never causes a panic — it simply extends to the end
-/// of the string.  Start bytes beyond the text length produce an empty span
-/// and are skipped.
+/// 6. Copy any trailing text after the last span.
 ///
 /// # Returns
 ///
-/// * The redacted string when at least one non-empty span is present.
-/// * A clone of `text` when `spans` is empty or all spans are empty.
+/// * The redacted string when validation succeeds.
 ///
 /// # Properties
 ///
@@ -100,64 +119,66 @@ impl From<std::ops::Range<usize>> for RedactionSpan {
 /// * **Deterministic** — same inputs always produce the same output.
 /// * **Label-neutral** — the replacement is always [`REDACTION_LABEL`];
 ///   no entity information is embedded (T-DEC-2).
-#[must_use]
-pub fn redact_text(text: &str, spans: &[RedactionSpan]) -> String {
-    // ── Step 1: filter empty spans ───────────────────────────────────────────
-    let mut active: Vec<RedactionSpan> = spans
-        .iter()
-        .filter(|s| !s.is_empty())
-        .cloned()
-        .collect();
+pub fn redact_text(text: &str, spans: &[RedactionSpan]) -> Result<String, RedactionError> {
+    // 1. Validate all spans.
+    for span in spans {
+        if span.start > text.len() || span.end > text.len() || span.start > span.end {
+            return Err(RedactionError::InvalidSpan {
+                start: span.start,
+                end: span.end,
+                len: text.len(),
+            });
+        }
+        if !text.is_char_boundary(span.start) || !text.is_char_boundary(span.end) {
+            return Err(RedactionError::NonCharBoundary {
+                start: span.start,
+                end: span.end,
+            });
+        }
+    }
+
+    // Filter empty spans
+    let mut active: Vec<RedactionSpan> = spans.iter().filter(|s| !s.is_empty()).cloned().collect();
 
     // Fast path: nothing to do.
     if active.is_empty() {
-        return text.to_string();
+        return Ok(text.to_string());
     }
 
-    // ── Step 2: sort by start position ───────────────────────────────────────
+    // Sort by start position
     active.sort_unstable_by_key(|s| s.start);
 
-    // ── Step 3: merge overlapping / adjacent spans ────────────────────────────
-    let merged = merge_spans(active, text.len());
+    // Merge overlapping / adjacent spans. Since they are validated, we do not clamp.
+    let merged = merge_spans(active);
 
-    // ── Step 4 & 5: single substitution pass ─────────────────────────────────
+    // Single substitution pass
     let mut out = String::with_capacity(text.len());
     let mut cursor = 0usize;
 
     for span in &merged {
-        // Copy the gap between the previous span's end and this span's start.
         if cursor < span.start {
             out.push_str(&text[cursor..span.start]);
         }
-        // Replace the sensitive span with the neutral label.
         out.push_str(REDACTION_LABEL);
         cursor = span.end;
     }
 
-    // Copy any text following the last redacted span.
     if cursor < text.len() {
         out.push_str(&text[cursor..]);
     }
 
-    out
+    Ok(out)
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 /// Merge a **sorted** list of spans into a minimal non-overlapping set.
-///
-/// Spans are clamped to `[0, text_len]` before merging.
-fn merge_spans(sorted: Vec<RedactionSpan>, text_len: usize) -> Vec<RedactionSpan> {
+fn merge_spans(sorted: Vec<RedactionSpan>) -> Vec<RedactionSpan> {
     let mut merged: Vec<RedactionSpan> = Vec::with_capacity(sorted.len());
 
     for span in sorted {
-        // Clamp to valid range.
-        let start = span.start.min(text_len);
-        let end = span.end.min(text_len);
-
-        if start >= end {
-            continue; // became empty after clamping
-        }
+        let start = span.start;
+        let end = span.end;
 
         if let Some(last) = merged.last_mut() {
             if start <= last.end {
@@ -188,11 +209,10 @@ mod tests {
     fn redacts_email_span() {
         // Arrange
         let text = "Contact us at john.smith@acme.com for support.";
-        //                        ^14              ^33
         let spans = vec![RedactionSpan::new(14, 33)];
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert
         assert_eq!(
@@ -210,11 +230,10 @@ mod tests {
     fn redacts_api_key_span() {
         // Arrange
         let text = "Use token sk-ABCD1234EFGH5678 to authenticate.";
-        //                     ^10               ^29  ("sk-ABCD1234EFGH5678" = 19 bytes)
         let spans = vec![RedactionSpan::new(10, 29)];
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert
         assert_eq!(
@@ -234,7 +253,7 @@ mod tests {
         let spans: Vec<RedactionSpan> = vec![];
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert
         assert_eq!(result, text);
@@ -247,21 +266,16 @@ mod tests {
     #[test]
     fn redacts_multiple_non_overlapping_spans() {
         // Arrange
-        // "Name: Alice, Email: alice@example.com"
-        //  0123456789...
         let text = "Name: Alice, Email: alice@example.com";
-        let name_span = RedactionSpan::new(6, 11);   // "Alice"
+        let name_span = RedactionSpan::new(6, 11); // "Alice"
         let email_span = RedactionSpan::new(20, 37); // "alice@example.com"
         let spans = vec![name_span, email_span];
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert
-        let expected = format!(
-            "Name: {}, Email: {}",
-            REDACTION_LABEL, REDACTION_LABEL
-        );
+        let expected = format!("Name: {}, Email: {}", REDACTION_LABEL, REDACTION_LABEL);
         assert_eq!(result, expected);
         assert!(!result.contains("Alice"));
         assert!(!result.contains("alice@example.com"));
@@ -281,7 +295,7 @@ mod tests {
         let spans = vec![span_a, span_b];
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert: exactly one label, not two
         assert_eq!(result.matches(REDACTION_LABEL).count(), 1);
@@ -300,7 +314,7 @@ mod tests {
         let spans = vec![span_a, span_b];
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert: one label covering "AAABBB"
         assert_eq!(result.matches(REDACTION_LABEL).count(), 1);
@@ -316,7 +330,7 @@ mod tests {
         let spans = vec![RedactionSpan::new(0, text.len())];
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert
         assert_eq!(result, REDACTION_LABEL);
@@ -331,7 +345,7 @@ mod tests {
         let spans = vec![RedactionSpan::new(0, 6)]; // "secret"
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert
         assert_eq!(result, format!("{} tail", REDACTION_LABEL));
@@ -346,7 +360,7 @@ mod tests {
         let spans = vec![RedactionSpan::new(5, 11)]; // "secret"
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert
         assert_eq!(result, format!("head {}", REDACTION_LABEL));
@@ -361,7 +375,7 @@ mod tests {
         let spans = vec![RedactionSpan::new(3, 3)]; // zero-length
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert
         assert_eq!(result, text);
@@ -374,21 +388,21 @@ mod tests {
         // Arrange
         let text = "AAA middle BBB";
         let span_bbb = RedactionSpan::new(11, 14); // "BBB" — listed first
-        let span_aaa = RedactionSpan::new(0, 3);   // "AAA" — listed second
+        let span_aaa = RedactionSpan::new(0, 3); // "AAA" — listed second
         let spans = vec![span_bbb, span_aaa];
 
         // Act
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         // Assert
         let expected = format!("{} middle {}", REDACTION_LABEL, REDACTION_LABEL);
         assert_eq!(result, expected);
     }
 
-    // ── Out-of-range end byte is clamped, not panicked ────────────────────────
+    // ── Out-of-range end byte is no longer clamped, but returns error ─────────
 
     #[test]
-    fn out_of_range_end_is_clamped_to_text_length() {
+    fn out_of_range_end_returns_error() {
         // Arrange
         let text = "hello";
         let spans = vec![RedactionSpan::new(3, 999)]; // end >> text.len()
@@ -396,8 +410,16 @@ mod tests {
         // Act
         let result = redact_text(text, &spans);
 
-        // Assert: "lo" at [3..5] is redacted, "hel" is preserved
-        assert_eq!(result, format!("hel{}", REDACTION_LABEL));
+        // Assert: Out-of-range span returns error
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            RedactionError::InvalidSpan {
+                start: 3,
+                end: 999,
+                len: 5
+            }
+        );
     }
 
     // ── Redaction label is always neutral ─────────────────────────────────────
@@ -409,7 +431,7 @@ mod tests {
         let text = "sensitive data here";
         let spans = vec![RedactionSpan::new(0, 9)]; // "sensitive"
 
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         assert!(result.contains(REDACTION_LABEL));
         assert!(result.contains("[Content removed per privacy policy]"));
@@ -421,17 +443,50 @@ mod tests {
     /// the surrounding text contains multi-byte UTF-8 characters.
     #[test]
     fn redacts_correctly_when_surrounding_text_contains_unicode() {
-        // "café secret café" — "café" is 5 bytes (c-a-f-é where é=2 bytes)
-        // We redact the ASCII "secret" substring.
         let text = "caf\u{00e9} secret caf\u{00e9}";
-        // "caf\u{00e9}" = 5 bytes, then " " = 1, so "secret" starts at byte 6
         let secret_start = 6usize;
         let secret_end = secret_start + "secret".len(); // 12
         let spans = vec![RedactionSpan::new(secret_start, secret_end)];
 
-        let result = redact_text(text, &spans);
+        let result = redact_text(text, &spans).unwrap();
 
         assert!(!result.contains("secret"));
         assert!(result.contains(REDACTION_LABEL));
+    }
+
+    // ── Regression tests for safety ──────────────────────────────────────────
+
+    #[test]
+    fn valid_utf8_span_success() {
+        let text = "café"; // é is 2 bytes: c(0), a(1), f(2), é(3..5)
+        let spans = vec![RedactionSpan::new(0, 3)]; // "caf"
+        let result = redact_text(text, &spans);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), format!("{}é", REDACTION_LABEL));
+    }
+
+    #[test]
+    fn out_of_range_start_returns_error() {
+        let text = "hello";
+        let spans = vec![RedactionSpan::new(10, 12)];
+        let result = redact_text(text, &spans);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            RedactionError::InvalidSpan { .. }
+        ));
+    }
+
+    #[test]
+    fn non_character_boundary_span_returns_error() {
+        let text = "café"; // é is 2 bytes (bytes 3 and 4)
+                           // Trying to slice at index 4 (middle of character 'é')
+        let spans = vec![RedactionSpan::new(3, 4)];
+        let result = redact_text(text, &spans);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            RedactionError::NonCharBoundary { .. }
+        ));
     }
 }

@@ -1,4 +1,4 @@
-﻿//! # Decision Budget — F-budget / T-DEC-6
+//! # Decision Budget — F-budget / T-DEC-6
 //!
 //! Tracks the **processing budget** consumed by the agent across a single
 //! request (or session).  The budget is an abstract unit ceiling; callers
@@ -240,7 +240,7 @@ mod tests {
         let charged = b.consume(100);
 
         // Assert
-        assert_eq!(charged, 5);           // only 5 actually charged
+        assert_eq!(charged, 5); // only 5 actually charged
         assert_eq!(b.consumed(), 5);
         assert_eq!(b.remaining(), 0);
         assert!(b.exhausted());

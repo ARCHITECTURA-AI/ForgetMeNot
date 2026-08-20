@@ -1,4 +1,4 @@
-﻿//! # Fail-Closed Safety Wrapper — T-DEC-3 / T-DEC-4
+//! # Fail-Closed Safety Wrapper — T-DEC-3 / T-DEC-4
 //!
 //! Guarantees that **no failure mode can produce an unsafe [`Decision::Allow`]**.
 //!
@@ -151,7 +151,9 @@ fn block_result() -> DecisionResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decide::decision::{evaluate_decision, FindingAction, DetectorFinding};
+    use crate::decide::decision::{
+        apply_decision, evaluate_decision, DetectorFinding, FindingAction, Representation,
+    };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -162,13 +164,23 @@ mod tests {
 
     /// A healthy evaluation that contains a Redact finding.
     fn healthy_redact() -> Result<DecisionResult, String> {
-        let findings = vec![DetectorFinding::new(0..5, 0.75, FindingAction::Redact)];
+        let findings = vec![DetectorFinding::new(
+            0..5,
+            0.75,
+            FindingAction::Redact,
+            Representation::Raw,
+        )];
         Ok(evaluate_decision(&findings))
     }
 
     /// A healthy evaluation that contains a Block finding.
     fn healthy_block() -> Result<DecisionResult, String> {
-        let findings = vec![DetectorFinding::new(0..5, 0.97, FindingAction::Block)];
+        let findings = vec![DetectorFinding::new(
+            0..5,
+            0.97,
+            FindingAction::Block,
+            Representation::Raw,
+        )];
         Ok(evaluate_decision(&findings))
     }
 
@@ -205,7 +217,12 @@ mod tests {
     #[test]
     fn failed_evaluation_blocks() {
         // Arrange: detector returned something, but evaluation failed
-        let findings = vec![DetectorFinding::new(0..5, 0.20, FindingAction::Allow)];
+        let findings = vec![DetectorFinding::new(
+            0..5,
+            0.20,
+            FindingAction::Allow,
+            Representation::Raw,
+        )];
         let detector_output = Some(findings);
 
         // Act
@@ -242,7 +259,12 @@ mod tests {
     #[test]
     fn successful_redact_passes_through_unchanged() {
         // Arrange
-        let findings = vec![DetectorFinding::new(0..5, 0.75, FindingAction::Redact)];
+        let findings = vec![DetectorFinding::new(
+            0..5,
+            0.75,
+            FindingAction::Redact,
+            Representation::Raw,
+        )];
         let detector_output = Some(findings);
 
         // Act
@@ -259,7 +281,12 @@ mod tests {
     #[test]
     fn successful_block_passes_through_unchanged() {
         // Arrange
-        let findings = vec![DetectorFinding::new(0..5, 0.97, FindingAction::Block)];
+        let findings = vec![DetectorFinding::new(
+            0..5,
+            0.97,
+            FindingAction::Block,
+            Representation::Raw,
+        )];
         let detector_output = Some(findings);
 
         // Act
@@ -267,7 +294,10 @@ mod tests {
 
         // Assert
         assert_eq!(fc.decision(), Decision::Block);
-        assert!(!fc.was_fail_closed(), "a genuine Block finding is not a fail-closed event");
+        assert!(
+            !fc.was_fail_closed(),
+            "a genuine Block finding is not a fail-closed event"
+        );
         assert_eq!(fc.fail_closed_reason, None);
     }
 
@@ -338,5 +368,31 @@ mod tests {
         let _ = match fc.decision() {
             Decision::Allow | Decision::Redact | Decision::Block => "info-level outcome",
         };
+    }
+
+    // ── T-DEC-3 / T-DEC-4 — scan_timeout_blocks_not_leaks / scanner_error_blocks_not_leaks ──
+
+    #[test]
+    fn scan_timeout_and_scanner_error_suppress_raw_text() {
+        // Arrange: 1. Timeout (represented by detector_output = None)
+        let raw_text = "sensitive information here";
+        let fc_timeout = fail_closed(None, healthy_allow());
+
+        // 2. Scanner error (represented by evaluation failure)
+        let findings = vec![DetectorFinding::new(
+            0..5,
+            0.20,
+            FindingAction::Allow,
+            Representation::Raw,
+        )];
+        let fc_error = fail_closed(Some(findings), failed_evaluation());
+
+        // Act
+        let output_timeout = apply_decision(raw_text, &fc_timeout.inner);
+        let output_error = apply_decision(raw_text, &fc_error.inner);
+
+        // Assert: both outcomes yield completely suppressed (empty) output
+        assert_eq!(output_timeout, "");
+        assert_eq!(output_error, "");
     }
 }
