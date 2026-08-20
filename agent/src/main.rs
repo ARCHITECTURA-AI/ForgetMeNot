@@ -5,13 +5,16 @@ use axum::{routing::get, Json, Router};
 use rusqlite::Connection;
 use std::sync::Arc;
 
+mod cli;
 mod config;
 mod decide;
 mod ingress;
 mod ledger;
 mod lineage;
 mod normaliser;
+mod obs;
 mod registry;
+mod stream;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -33,6 +36,11 @@ async fn ready_handler() -> Json<serde_json::Value> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = AppConfig::load()?;
+    build_and_run(config).await
+}
+
+/// Build and start the ForgetMeNot Agent application.
+pub async fn build_and_run(config: AppConfig) -> anyhow::Result<()> {
     let config_arc = Arc::new(config.clone());
 
     let conn = Connection::open(&config.fmn_db_path)?;
